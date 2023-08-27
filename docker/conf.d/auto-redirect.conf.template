@@ -1,0 +1,6 @@
+server {
+    listen 80;
+
+    server_name $DOMAIN $ADMIN $PUBLIC;
+    return 308 https://$host$request_uri;
+}

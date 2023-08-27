@@ -1,0 +1,7 @@
+upstream admin {
+    server ${PROJECT}admin:${ADMIN_PORT};
+}
+
+upstream public {
+    server ${PROJECT}public:${PUBLIC_PORT};
+}

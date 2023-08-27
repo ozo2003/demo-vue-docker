@@ -1,0 +1,107 @@
+networks:
+    backend:
+        name: backend
+        external: true
+
+    frontend:
+        name: frontend
+        external: true
+
+x-node:
+    &x-node
+    image: ghcr.io/960018/node:18-${ARCH}
+    networks:
+        - backend
+    volumes:
+        - ../src:/var/www/html
+        - ./certs:/etc/ssl/private
+    env_file: .env
+    tty: true
+    shm_size: 2gb
+    tmpfs: /tmp
+    mem_limit: 2g
+    ulimits:
+        memlock:
+            soft: -1
+            hard: -1
+    command: /bin/bash
+    environment:
+        NODE_OPTIONS: "--max-old-space-size=1536"
+
+services:
+
+    php:
+        image: ghcr.io/960018/php-fpm:testing-${ARCH}
+        container_name: ${PROJECT}php
+        networks:
+            - backend
+        volumes:
+            - ../src:/var/www/html
+        healthcheck:
+            test: "php-fpm-healthcheck || exit 1"
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 15s
+        tty: true
+        stdin_open: true
+        shm_size: 4gb
+        tmpfs: /tmp
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        working_dir: /var/www/html/api
+        env_file: .env
+        mem_limit: 4g
+        environment:
+            HTTP_HOST: "${DOMAIN}"
+
+    nginx:
+        image: ghcr.io/960018/nginx:${ARCH}
+        container_name: ${PROJECT}nginx
+        networks:
+            - backend
+            - frontend
+        volumes:
+            - ../src:/var/www/html
+            - ./conf.d:/etc/nginx/templates
+            - ./certs:/etc/ssl/private
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=frontend"
+            - "traefik.http.routers.${PROJECT}nginx.entrypoints=https"
+            - "traefik.udp.routers.${PROJECT}nginx.entrypoints=http3"
+            - "traefik.http.routers.${PROJECT}nginx.tls=true"
+            - "traefik.http.services.${PROJECT}nginx.loadbalancer.server.scheme=https"
+            - "traefik.http.services.${PROJECT}nginx.loadbalancer.server.port=443"
+            - "traefik.http.routers.${PROJECT}nginx.rule=HostRegexp(`^(.?)+${PROJECT_NAME}\\.d\\.io$`)"
+        tmpfs: /tmp
+        shm_size: 256m
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        working_dir: /var/www/html
+        env_file: .env
+        mem_limit: 64m
+        healthcheck:
+            test: "service nginx status || exit 1"
+            interval: 5s
+            timeout: 1s
+            retries: 3
+            start_period: 15s
+        depends_on:
+            - php
+
+    public:
+        <<: *x-node
+        container_name: ${PROJECT}public
+        working_dir: /var/www/html/front/public
+        hostname: ${PUBLIC}
+        ports:
+            - ${PUBLIC_PORT}:${PUBLIC_PORT}
+
+    admin:
+        <<: *x-node
+        container_name: ${PROJECT}admin
+        working_dir: /var/www/html/front/admin
+        hostname: ${ADMIN}
+        ports:
+            - ${ADMIN_PORT}:${ADMIN_PORT}
